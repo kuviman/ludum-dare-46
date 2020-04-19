@@ -6,6 +6,7 @@ pub struct Assets {}
 pub struct ClientApp {
     geng: Rc<Geng>,
     assets: Assets,
+    connection: geng::net::client::Connection<ServerMessage, ClientMessage>,
 }
 
 impl ClientApp {
@@ -19,13 +20,15 @@ impl ClientApp {
         let connection_future = async move {
             let mut connection = geng::net::client::connect(&opts.net_opts.connect).await;
             connection.send(ClientMessage::GetToken);
-            let (message, connection) = connection.into_future().await;
+            let (message, mut connection) = connection.into_future().await;
             info!("Got token");
-            if let Some(ServerMessage::Token(token)) = message {
-                (connection, token)
+            let token = if let Some(ServerMessage::Token(token)) = message {
+                token
             } else {
                 panic!("Expected token, got {:?}", message);
-            }
+            };
+            connection.send(ClientMessage::Connect(token.clone()));
+            (connection, token)
         };
         let assets_future = <Assets as geng::LoadAsset>::load(&geng, ".");
         let app = geng::LoadingScreen::new(
@@ -50,6 +53,7 @@ impl ClientApp {
         Self {
             geng: geng.clone(),
             assets,
+            connection,
         }
     }
 }

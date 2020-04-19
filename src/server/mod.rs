@@ -16,11 +16,17 @@ impl Drop for Client {
 
 impl geng::net::Receiver<ClientMessage> for Client {
     fn handle(&mut self, message: ClientMessage) {
-        if let ClientMessage::GetToken = message {
-            let token = Token::new();
-            self.player_token = Some(token.clone());
-            self.sender.send(ServerMessage::Token(token));
-            return;
+        match message {
+            ClientMessage::GetToken => {
+                self.sender.send(ServerMessage::Token(Token::new()));
+                return;
+            }
+            ClientMessage::Connect(token) => {
+                self.model.lock().unwrap().connect(&token);
+                self.player_token = Some(token);
+                return;
+            }
+            _ => {}
         }
         if let Some(player_token) = &self.player_token {
             for reply in self.model.lock().unwrap().handle(player_token, message) {

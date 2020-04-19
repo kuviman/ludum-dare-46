@@ -26,6 +26,7 @@ pub enum ServerMessage {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ClientMessage {
     GetToken,
+    Connect(Token),
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -38,7 +39,13 @@ impl Model {
         Vec::new()
     }
 
-    pub fn disconnect(&mut self, player_token: &Token) {}
+    pub fn connect(&mut self, player_token: &Token) {
+        info!("{:?} connected", player_token);
+    }
+
+    pub fn disconnect(&mut self, player_token: &Token) {
+        info!("{:?} disconnected", player_token);
+    }
 
     pub fn tick(&mut self) {}
 }
