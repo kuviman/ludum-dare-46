@@ -129,8 +129,14 @@ impl Model {
     }
 
     pub fn connect(&mut self, player_token: &Token, events: &mut Events<ServerMessage>) -> Id {
+        for player in self.players.values() {
+            if player.token == *player_token {
+                info!("{:?} is back online!", player);
+                return player.id;
+            }
+        }
         let player = Player::new(player_token.clone());
-        info!("{:?} connected", player);
+        info!("{:?} connected (new player)", player);
         let id = player.id;
         events.fire(ServerMessage::PlayerInfo(player.clone()));
         self.players.insert(id, player);
@@ -138,7 +144,7 @@ impl Model {
     }
 
     pub fn disconnect(&mut self, player_id: Id) {
-        if let Some(player) = self.players.remove(&player_id) {
+        if let Some(player) = self.players.get(&player_id) {
             info!("{:?} disconnected", player);
         }
     }
