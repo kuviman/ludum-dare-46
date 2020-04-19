@@ -74,6 +74,7 @@ impl State {
                 }
                 ServerMessage::Feed(id) => {
                     self.players_eaten.push(id);
+                    self.princess.eat();
                 }
                 _ => {}
             }
