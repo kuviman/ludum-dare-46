@@ -112,6 +112,7 @@ impl Model {
             ClientMessage::Feed => {
                 if self.princess_life > 0.0 {
                     self.princess_life += 10.0;
+                    self.eaten.push(player_id);
                     events.fire(ServerMessage::Feed(
                         self.players.get(&player_id).unwrap().id,
                     ));
