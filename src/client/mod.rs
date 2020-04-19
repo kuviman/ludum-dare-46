@@ -3,10 +3,25 @@ use crate::*;
 #[derive(geng::Assets)]
 pub struct Assets {}
 
+pub struct State {
+    princess_life: f64,
+    princess_alive: bool,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            princess_life: 0.0,
+            princess_alive: false,
+        }
+    }
+}
+
 pub struct ClientApp {
     geng: Rc<Geng>,
     assets: Assets,
     connection: geng::net::client::Connection<ServerMessage, ClientMessage>,
+    state: State,
 }
 
 impl ClientApp {
@@ -54,13 +69,59 @@ impl ClientApp {
             geng: geng.clone(),
             assets,
             connection,
+            state: default(),
         }
     }
 }
 
 impl geng::State for ClientApp {
-    fn update(&mut self, delta_time: f64) {}
+    fn update(&mut self, delta_time: f64) {
+        for message in self.connection.new_messages() {
+            match message {
+                ServerMessage::PrincessDied => {
+                    info!("Princess died!");
+                    self.state.princess_alive = false;
+                }
+                ServerMessage::PrincessLife(life) => {
+                    self.state.princess_alive = true;
+                    self.state.princess_life = life;
+                }
+                _ => {}
+            }
+        }
+    }
     fn draw(&mut self, framebuffer: &mut ugli::Framebuffer) {
         ugli::clear(framebuffer, Some(Color::WHITE), None);
+        let framebuffer_size = framebuffer.size().map(|x| x as f32);
+        if self.state.princess_alive {
+            self.geng.default_font().draw_aligned(
+                framebuffer,
+                &format!("Princess life: {}", self.state.princess_life.max(0.0)),
+                vec2(framebuffer_size.x / 2.0, framebuffer_size.y / 2.0),
+                0.5,
+                32.0,
+                Color::BLACK,
+            );
+        } else {
+            self.geng.default_font().draw_aligned(
+                framebuffer,
+                "Princess is dead :(",
+                vec2(framebuffer_size.x / 2.0, framebuffer_size.y / 2.0),
+                0.5,
+                32.0,
+                Color::BLACK,
+            );
+        }
+    }
+    fn handle_event(&mut self, event: geng::Event) {
+        match event {
+            geng::Event::KeyDown {
+                key: geng::Key::Space,
+                ..
+            } => {
+                self.connection.send(ClientMessage::Feed);
+            }
+            _ => {}
+        }
     }
 }

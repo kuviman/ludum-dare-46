@@ -1,15 +1,44 @@
 use crate::*;
 
+#[derive(Default)]
+struct ModelWrapper {
+    model: Model,
+    events: Events<ServerMessage>,
+}
+
+impl Deref for ModelWrapper {
+    type Target = Model;
+    fn deref(&self) -> &Model {
+        &self.model
+    }
+}
+
+impl DerefMut for ModelWrapper {
+    fn deref_mut(&mut self) -> &mut Model {
+        &mut self.model
+    }
+}
+
+impl ModelWrapper {
+    fn handle(&mut self, player_id: Id, message: ClientMessage) {
+        self.model.handle(player_id, message, &mut self.events);
+    }
+    fn tick(&mut self) {
+        self.model.tick(&mut self.events);
+    }
+}
+
 struct Client {
-    player_token: Option<Token>,
-    model: Arc<Mutex<Model>>,
-    sender: Box<dyn geng::net::Sender<ServerMessage>>,
+    player_id: Option<Id>,
+    model: Arc<Mutex<ModelWrapper>>,
+    message_handler: Arc<Box<dyn Fn(ServerMessage) + Sync + Send>>,
+    sender: Arc<Mutex<Box<dyn geng::net::Sender<ServerMessage>>>>,
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
-        if let Some(player_token) = &self.player_token {
-            self.model.lock().unwrap().disconnect(player_token);
+        if let Some(player_id) = self.player_id {
+            self.model.lock().unwrap().disconnect(player_id);
         }
     }
 }
@@ -18,41 +47,50 @@ impl geng::net::Receiver<ClientMessage> for Client {
     fn handle(&mut self, message: ClientMessage) {
         match message {
             ClientMessage::GetToken => {
-                self.sender.send(ServerMessage::Token(Token::new()));
+                self.sender
+                    .lock()
+                    .unwrap()
+                    .send(ServerMessage::Token(Token::new()));
                 return;
             }
             ClientMessage::Connect(token) => {
-                self.model.lock().unwrap().connect(&token);
-                self.player_token = Some(token);
+                let mut model = self.model.lock().unwrap();
+                self.player_id = Some(model.connect(&token));
+                model
+                    .events
+                    .subscribe(Arc::downgrade(&self.message_handler));
                 return;
             }
             _ => {}
         }
-        if let Some(player_token) = &self.player_token {
-            for reply in self.model.lock().unwrap().handle(player_token, message) {
-                self.sender.send(reply);
-            }
+        if let Some(player_id) = self.player_id {
+            self.model.lock().unwrap().handle(player_id, message);
         }
     }
 }
 struct ServerApp {
-    model: Arc<Mutex<Model>>,
+    model: Arc<Mutex<ModelWrapper>>,
 }
 impl geng::net::server::App for ServerApp {
     type Client = Client;
     type ServerMessage = ServerMessage;
     type ClientMessage = ClientMessage;
     fn connect(&mut self, mut sender: Box<dyn geng::net::Sender<ServerMessage>>) -> Client {
+        let sender = Arc::new(Mutex::new(sender));
         Client {
-            player_token: None,
+            player_id: None,
             model: self.model.clone(),
-            sender,
+            sender: sender.clone(),
+            message_handler: Arc::new(Box::new({
+                let sender = sender.clone();
+                move |message| sender.lock().unwrap().send(message)
+            })),
         }
     }
 }
 
 pub struct Server {
-    model: Arc<Mutex<Model>>,
+    model: Arc<Mutex<ModelWrapper>>,
     server: geng::net::Server<ServerApp>,
 }
 
