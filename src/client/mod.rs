@@ -1,7 +1,24 @@
 use crate::*;
 
+mod camera;
+mod drawer;
+mod princess;
+
+pub use camera::*;
+pub use drawer::Drawer;
+pub use princess::Princess;
+
 #[derive(geng::Assets)]
-pub struct Assets {}
+pub struct Textures {
+    #[asset(path = "princess")]
+    princess: princess::Assets,
+}
+
+#[derive(geng::Assets)]
+pub struct Assets {
+    #[asset(path = "textures")]
+    textures: Textures,
+}
 
 pub struct State {
     theme: Rc<geng::ui::Theme>,
@@ -11,12 +28,16 @@ pub struct State {
     princess_life: f64,
     princess_alive: bool,
     button: geng::ui::TextButton,
+    princess: Princess,
+    drawer: Drawer,
+    camera: Camera,
 }
 
 impl State {
     fn new(
         geng: &Rc<Geng>,
         connection: geng::net::client::Connection<ServerMessage, ClientMessage>,
+        assets: Assets,
     ) -> Self {
         let theme = Rc::new(geng::ui::Theme {
             color: Color::BLACK,
@@ -31,6 +52,9 @@ impl State {
             princess_life: 0.0,
             princess_alive: false,
             button: geng::ui::TextButton::new(geng, theme, "FEED".to_owned(), 64.0),
+            princess: Princess::new(geng, assets.textures.princess),
+            drawer: Drawer::new(geng),
+            camera: Camera::new(),
         }
     }
     fn handle_messages(&mut self) {
@@ -58,8 +82,6 @@ impl State {
     fn ui<'a>(&'a mut self) -> impl geng::ui::Widget + 'a {
         use geng::ui::*;
         let connection = &mut self.connection;
-        let players = &self.players;
-        let players_eaten = &self.players_eaten;
         if self.princess_alive {
             Box::new(geng::ui::column![
                 geng::ui::text(
@@ -68,25 +90,11 @@ impl State {
                     64.0,
                     self.theme.color,
                 )
-                .align(vec2(0.5, 0.5))
-                .uniform_padding(16.0),
-                geng::ui::text(
-                    format!(
-                        "People eaten: {:?}",
-                        players_eaten
-                            .iter()
-                            .map(|id| &players.get(id).unwrap().name)
-                            .collect::<Vec<_>>()
-                    ),
-                    &self.theme.font,
-                    32.0,
-                    self.theme.color,
-                )
-                .align(vec2(0.5, 0.5))
+                .align(vec2(1.0, 0.5))
                 .uniform_padding(16.0),
                 self.button
                     .ui(Box::new(move || { connection.send(ClientMessage::Feed) }))
-                    .align(vec2(0.5, 0.5)),
+                    .align(vec2(1.0, 0.5)),
             ]) as Box<dyn geng::ui::Widget + 'a>
         } else {
             Box::new(
@@ -96,16 +104,23 @@ impl State {
                     64.0,
                     self.theme.color,
                 )
-                .align(vec2(0.5, 0.5)),
+                .align(vec2(1.0, 0.5)),
             )
         }
-        .align(vec2(0.5, 0.5))
+        .align(vec2(1.0, 1.0))
+        .uniform_padding(32.0)
+    }
+    fn draw(&mut self, framebuffer: &mut ugli::Framebuffer) {
+        self.princess.draw(&self.drawer, framebuffer, &self.camera);
+    }
+    fn update(&mut self, delta_time: f64) {
+        let delta_time = delta_time as f32;
+        self.princess.update(delta_time);
     }
 }
 
 pub struct ClientApp {
     geng: Rc<Geng>,
-    assets: Assets,
     state: State,
     ui_controller: geng::ui::Controller,
 }
@@ -154,8 +169,7 @@ impl ClientApp {
     ) -> Self {
         Self {
             geng: geng.clone(),
-            assets,
-            state: State::new(geng, connection),
+            state: State::new(geng, connection, assets),
             ui_controller: geng::ui::Controller::new(),
         }
     }
@@ -164,11 +178,12 @@ impl ClientApp {
 impl geng::State for ClientApp {
     fn update(&mut self, delta_time: f64) {
         self.state.handle_messages();
+        self.state.update(delta_time);
         self.ui_controller.update(self.state.ui(), delta_time);
     }
     fn draw(&mut self, framebuffer: &mut ugli::Framebuffer) {
         ugli::clear(framebuffer, Some(Color::WHITE), None);
-        let framebuffer_size = framebuffer.size().map(|x| x as f32);
+        self.state.draw(framebuffer);
         self.ui_controller.draw(self.state.ui(), framebuffer);
     }
     fn handle_event(&mut self, event: geng::Event) {
