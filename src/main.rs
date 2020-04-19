@@ -50,7 +50,7 @@ pub struct Opts {
     #[structopt(long)]
     no_client: bool,
     #[structopt(long)]
-    server: bool,
+    start_server: bool,
 }
 
 impl Opts {
@@ -79,7 +79,7 @@ fn main() {
     #[cfg(target_arch = "wasm32")]
     let server = None::<()>;
     #[cfg(not(target_arch = "wasm32"))]
-    let (server, server_handle) = if opts.server {
+    let (server, server_handle) = if opts.start_server {
         let server = Server::new(&opts.net_opts);
         let server_handle = server.handle();
         ctrlc::set_handler({
