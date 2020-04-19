@@ -35,6 +35,7 @@ impl State {
     }
     fn handle_messages(&mut self) {
         for message in self.connection.new_messages() {
+            info!("{:?}", message);
             match message {
                 ServerMessage::PrincessDied => {
                     self.princess_alive = false;
