@@ -26,6 +26,9 @@ impl ModelWrapper {
     fn tick(&mut self) {
         self.model.tick(&mut self.events);
     }
+    fn connect(&mut self, token: &Token) -> Id {
+        self.model.connect(&token, &mut self.events)
+    }
 }
 
 struct Client {
@@ -59,6 +62,10 @@ impl geng::net::Receiver<ClientMessage> for Client {
                 model
                     .events
                     .subscribe(Arc::downgrade(&self.message_handler));
+                let mut sender = self.sender.lock().unwrap();
+                for message in model.initial_messages() {
+                    sender.send(message);
+                }
                 return;
             }
             _ => {}

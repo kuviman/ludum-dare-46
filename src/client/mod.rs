@@ -6,6 +6,8 @@ pub struct Assets {}
 pub struct State {
     theme: Rc<geng::ui::Theme>,
     connection: geng::net::client::Connection<ServerMessage, ClientMessage>,
+    players: HashMap<Id, Player>,
+    players_eaten: Vec<Id>,
     princess_life: f64,
     princess_alive: bool,
     button: geng::ui::TextButton,
@@ -24,20 +26,59 @@ impl State {
         Self {
             theme: theme.clone(),
             connection,
+            players: HashMap::new(),
+            players_eaten: Vec::new(),
             princess_life: 0.0,
             princess_alive: false,
             button: geng::ui::TextButton::new(geng, theme, "FEED".to_owned(), 64.0),
         }
     }
+    fn handle_messages(&mut self) {
+        for message in self.connection.new_messages() {
+            match message {
+                ServerMessage::PrincessDied => {
+                    self.princess_alive = false;
+                    self.players_eaten.clear();
+                }
+                ServerMessage::PrincessLife(life) => {
+                    self.princess_alive = true;
+                    self.princess_life = life;
+                }
+                ServerMessage::PlayerInfo(player) => {
+                    self.players.insert(player.id, player);
+                }
+                ServerMessage::Feed(id) => {
+                    self.players_eaten.push(id);
+                }
+                _ => {}
+            }
+        }
+    }
     fn ui<'a>(&'a mut self) -> impl geng::ui::Widget + 'a {
         use geng::ui::*;
         let connection = &mut self.connection;
+        let players = &self.players;
+        let players_eaten = &self.players_eaten;
         if self.princess_alive {
             Box::new(geng::ui::column![
                 geng::ui::text(
                     format!("Princess life: {}", self.princess_life),
                     &self.theme.font,
                     64.0,
+                    self.theme.color,
+                )
+                .align(vec2(0.5, 0.5))
+                .uniform_padding(16.0),
+                geng::ui::text(
+                    format!(
+                        "People eaten: {:?}",
+                        players_eaten
+                            .iter()
+                            .map(|id| &players.get(id).unwrap().name)
+                            .collect::<Vec<_>>()
+                    ),
+                    &self.theme.font,
+                    32.0,
                     self.theme.color,
                 )
                 .align(vec2(0.5, 0.5))
@@ -87,6 +128,7 @@ impl ClientApp {
                 panic!("Expected token, got {:?}", message);
             };
             connection.send(ClientMessage::Connect(token.clone()));
+            connection.send(ClientMessage::SetName(opts.name.clone()));
             (connection, token)
         };
         let assets_future = <Assets as geng::LoadAsset>::load(&geng, ".");
@@ -120,19 +162,7 @@ impl ClientApp {
 
 impl geng::State for ClientApp {
     fn update(&mut self, delta_time: f64) {
-        for message in self.state.connection.new_messages() {
-            match message {
-                ServerMessage::PrincessDied => {
-                    info!("Princess died!");
-                    self.state.princess_alive = false;
-                }
-                ServerMessage::PrincessLife(life) => {
-                    self.state.princess_alive = true;
-                    self.state.princess_life = life;
-                }
-                _ => {}
-            }
-        }
+        self.state.handle_messages();
         self.ui_controller.update(self.state.ui(), delta_time);
     }
     fn draw(&mut self, framebuffer: &mut ugli::Framebuffer) {

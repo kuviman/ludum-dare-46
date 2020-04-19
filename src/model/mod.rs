@@ -35,19 +35,22 @@ pub enum ServerMessage {
     Feed(Id),
     PrincessDied,
     PrincessLife(f64),
+    PlayerInfo(Player),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ClientMessage {
     GetToken,
     Connect(Token),
+    SetName(String),
     Feed,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Player {
-    token: Token,
-    id: Id,
+    pub token: Token,
+    pub id: Id,
+    pub name: String,
 }
 
 impl Player {
@@ -55,27 +58,8 @@ impl Player {
         Self {
             token,
             id: Id::new(),
+            name: "<noname>".to_owned(),
         }
-    }
-}
-
-impl PartialEq for Player {
-    fn eq(&self, other: &Player) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for Player {}
-
-impl std::hash::Hash for Player {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::hash::Hash::hash(&self.id, state)
-    }
-}
-
-impl std::borrow::Borrow<Id> for Player {
-    fn borrow(&self) -> &Id {
-        &self.id
     }
 }
 
@@ -85,7 +69,7 @@ pub struct State {}
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Model {
     eaten: Vec<Id>,
-    players: HashSet<Player>,
+    players: HashMap<Id, Player>,
     princess_life: f64,
 }
 
@@ -93,7 +77,7 @@ impl Default for Model {
     fn default() -> Self {
         Self {
             eaten: Vec::new(),
-            players: HashSet::new(),
+            players: HashMap::new(),
             princess_life: 60.0,
         }
     }
@@ -101,6 +85,22 @@ impl Default for Model {
 
 impl Model {
     pub const TICKS_PER_SECOND: f64 = 1.0;
+
+    pub fn initial_messages(&self) -> Vec<ServerMessage> {
+        let mut messages = Vec::new();
+        for player in self.players.values() {
+            messages.push(ServerMessage::PlayerInfo(player.clone()));
+        }
+        for &id in &self.eaten {
+            messages.push(ServerMessage::Feed(id));
+        }
+        if self.princess_life > 0.0 {
+            messages.push(ServerMessage::PrincessLife(self.princess_life));
+        } else {
+            messages.push(ServerMessage::PrincessDied);
+        }
+        messages
+    }
 
     pub fn handle(
         &mut self,
@@ -118,20 +118,26 @@ impl Model {
                     events.fire(ServerMessage::PrincessLife(self.princess_life));
                 }
             }
+            ClientMessage::SetName(name) => {
+                let player = self.players.get_mut(&player_id).unwrap();
+                player.name = name;
+                events.fire(ServerMessage::PlayerInfo(player.clone()));
+            }
             _ => {}
         }
     }
 
-    pub fn connect(&mut self, player_token: &Token) -> Id {
+    pub fn connect(&mut self, player_token: &Token, events: &mut Events<ServerMessage>) -> Id {
         let player = Player::new(player_token.clone());
         info!("{:?} connected", player);
         let id = player.id;
-        self.players.insert(player);
+        events.fire(ServerMessage::PlayerInfo(player.clone()));
+        self.players.insert(id, player);
         id
     }
 
     pub fn disconnect(&mut self, player_id: Id) {
-        if let Some(player) = self.players.take(&player_id) {
+        if let Some(player) = self.players.remove(&player_id) {
             info!("{:?} disconnected", player);
         }
     }
