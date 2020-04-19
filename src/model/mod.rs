@@ -148,6 +148,7 @@ impl Model {
         if self.princess_life > 0.0 {
             self.princess_life -= delta_time;
             if self.princess_life <= 0.0 {
+                self.eaten.clear();
                 events.fire(ServerMessage::PrincessDied);
             }
         } else {
