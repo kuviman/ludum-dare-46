@@ -15,7 +15,18 @@ impl ClientApp {
             ..default()
         }));
         let name = opts.name.clone();
-        let connection_future = geng::net::client::connect(&opts.net_opts.connect);
+        let opts = opts.clone();
+        let connection_future = async move {
+            let mut connection = geng::net::client::connect(&opts.net_opts.connect).await;
+            connection.send(ClientMessage::GetToken);
+            let (message, connection) = connection.into_future().await;
+            info!("Got token");
+            if let Some(ServerMessage::Token(token)) = message {
+                (connection, token)
+            } else {
+                panic!("Expected token, got {:?}", message);
+            }
+        };
         let assets_future = <Assets as geng::LoadAsset>::load(&geng, ".");
         let app = geng::LoadingScreen::new(
             &geng,
@@ -23,9 +34,7 @@ impl ClientApp {
             future::join(assets_future, connection_future),
             {
                 let geng = geng.clone();
-                move |(assets, mut connection)| {
-                    info!("Connected to the server");
-                    connection.send(ClientMessage::GetToken);
+                move |(assets, (mut connection, token))| {
                     Self::new(&geng, connection, assets.unwrap())
                 }
             },
