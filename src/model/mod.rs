@@ -145,7 +145,7 @@ impl Model {
             }
         } else {
             self.princess_life -= delta_time;
-            if self.princess_life < -60.0 {
+            if self.princess_life < -5.0 {
                 self.princess_life = 60.0;
             }
         }
