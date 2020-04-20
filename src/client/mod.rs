@@ -67,9 +67,12 @@ impl State {
             match message {
                 ServerMessage::PrincessDied => {
                     self.princess_alive = false;
-                    self.players_eaten.clear();
+                    self.falling.clear();
                 }
                 ServerMessage::PrincessLife(life) => {
+                    if !self.princess_alive {
+                        self.players_eaten.clear();
+                    }
                     self.princess_alive = true;
                     self.princess_life = life;
                 }
@@ -88,51 +91,95 @@ impl State {
     }
     fn ui<'a>(&'a mut self) -> impl geng::ui::Widget + 'a {
         use geng::ui::*;
-        let connection = &mut self.connection;
         if self.princess_alive {
-            Box::new(geng::ui::column![
-                geng::ui::text(
-                    format!("Princess life: {}", self.princess_life),
-                    &self.theme.font,
-                    64.0,
-                    self.theme.color,
-                )
-                .align(vec2(1.0, 0.5))
-                .uniform_padding(16.0),
-                self.button
-                    .ui(Box::new(move || { connection.send(ClientMessage::Feed) }))
+            let connection = &mut self.connection;
+            let result = if self.princess_alive {
+                Box::new(geng::ui::column![
+                    geng::ui::text(
+                        format!("Princess life: {}", self.princess_life),
+                        &self.theme.font,
+                        64.0,
+                        self.theme.color,
+                    )
+                    .align(vec2(1.0, 0.5))
+                    .uniform_padding(16.0),
+                    self.button
+                        .ui(Box::new(move || { connection.send(ClientMessage::Feed) }))
+                        .align(vec2(1.0, 0.5)),
+                ]) as Box<dyn geng::ui::Widget + 'a>
+            } else {
+                Box::new(
+                    geng::ui::text(
+                        "Princess is dead :(",
+                        &self.theme.font,
+                        64.0,
+                        self.theme.color,
+                    )
                     .align(vec2(1.0, 0.5)),
-            ]) as Box<dyn geng::ui::Widget + 'a>
-        } else {
-            Box::new(
-                geng::ui::text(
-                    "Princess is dead :(",
-                    &self.theme.font,
-                    64.0,
-                    self.theme.color,
                 )
-                .align(vec2(1.0, 0.5)),
+            }
+            .align(vec2(1.0, 1.0))
+            .uniform_padding(32.0);
+            Box::new(result) as Box<dyn geng::ui::Widget + 'a>
+        } else {
+            let mut cnt_by_name = std::collections::BTreeMap::new();
+            for &id in &self.players_eaten {
+                let name = &self.players.get(&id).unwrap().name;
+                if !cnt_by_name.contains_key(name) {
+                    cnt_by_name.insert(name.to_owned(), 0);
+                }
+                *cnt_by_name.get_mut(name).unwrap() += 1;
+            }
+            let theme = &self.theme;
+            let eaten_players = geng::ui::column(
+                cnt_by_name
+                    .into_iter()
+                    .map(|(name, count)| {
+                        Box::new(
+                            geng::ui::text(
+                                format!("{}: {}", name, count),
+                                &theme.font,
+                                32.0,
+                                self.theme.color,
+                            )
+                            .align(vec2(0.5, 0.5))
+                            .padding_bottom(8.0),
+                        ) as Box<dyn Widget + 'a>
+                    })
+                    .collect(),
+            );
+            Box::new(
+                geng::ui::column![
+                    text("Princess is dead :(", &theme.font, 64.0, theme.color)
+                        .align(vec2(0.5, 0.5))
+                        .padding_bottom(16.0),
+                    text("Players eaten:", &theme.font, 64.0, theme.color)
+                        .align(vec2(0.5, 0.5))
+                        .padding_bottom(16.0),
+                    eaten_players,
+                ]
+                .align(vec2(0.5, 0.5)),
             )
         }
-        .align(vec2(1.0, 1.0))
-        .uniform_padding(32.0)
     }
     fn draw(&mut self, framebuffer: &mut ugli::Framebuffer) {
-        let framebuffer_size = framebuffer.size().map(|x| x as f32);
-        for (name, y) in &self.falling {
-            self.geng.default_font().draw_aligned(
-                framebuffer,
-                name,
-                vec2(
-                    framebuffer_size.x / 2.0,
-                    framebuffer_size.y * (0.5 + y / 2.0),
-                ),
-                0.5,
-                64.0,
-                Color::BLACK,
-            );
+        if self.princess_alive {
+            let framebuffer_size = framebuffer.size().map(|x| x as f32);
+            for (name, y) in &self.falling {
+                self.geng.default_font().draw_aligned(
+                    framebuffer,
+                    name,
+                    vec2(
+                        framebuffer_size.x / 2.0,
+                        framebuffer_size.y * (0.5 + y / 2.0),
+                    ),
+                    0.5,
+                    64.0,
+                    Color::BLACK,
+                );
+            }
+            self.princess.draw(&self.drawer, framebuffer, &self.camera);
         }
-        self.princess.draw(&self.drawer, framebuffer, &self.camera);
     }
     fn update(&mut self, delta_time: f64) {
         let delta_time = delta_time as f32;
