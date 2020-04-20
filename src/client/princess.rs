@@ -39,14 +39,14 @@ impl Princess {
         }
     }
     pub fn eat(&mut self) {
-        self.eat_time = 0.0;
+        self.eat_time = -2.0;
     }
     pub fn update(&mut self, delta_time: f32) {
         self.eat_time = (self.eat_time + delta_time * 3.0).min(1.0);
     }
     pub fn draw(&self, drawer: &Drawer, framebuffer: &mut ugli::Framebuffer, camera: &Camera) {
         let size: f32 = 2.0;
-        let t = ((self.eat_time * 2.0 * std::f32::consts::PI).cos() + 1.0) / 2.0;
+        let t = ((self.eat_time.max(0.0) * 2.0 * std::f32::consts::PI).cos() + 1.0) / 2.0;
         let angle = t * 1.5;
         drawer.draw(
             framebuffer,

@@ -21,6 +21,7 @@ pub struct Assets {
 }
 
 pub struct State {
+    geng: Rc<Geng>,
     theme: Rc<geng::ui::Theme>,
     connection: geng::net::client::Connection<ServerMessage, ClientMessage>,
     players: HashMap<Id, Player>,
@@ -30,6 +31,7 @@ pub struct State {
     button: geng::ui::TextButton,
     princess: Princess,
     drawer: Drawer,
+    falling: Vec<(String, f32)>,
     camera: Camera,
 }
 
@@ -45,6 +47,7 @@ impl State {
         });
         let theme = &theme;
         Self {
+            geng: geng.clone(),
             theme: theme.clone(),
             connection,
             players: HashMap::new(),
@@ -55,6 +58,7 @@ impl State {
             princess: Princess::new(geng, assets.textures.princess),
             drawer: Drawer::new(geng),
             camera: Camera::new(),
+            falling: Vec::new(),
         }
     }
     fn handle_messages(&mut self) {
@@ -75,6 +79,8 @@ impl State {
                 ServerMessage::Feed(id) => {
                     self.players_eaten.push(id);
                     self.princess.eat();
+                    self.falling
+                        .push((self.players.get(&id).unwrap().name.clone(), 1.0));
                 }
                 _ => {}
             }
@@ -112,10 +118,28 @@ impl State {
         .uniform_padding(32.0)
     }
     fn draw(&mut self, framebuffer: &mut ugli::Framebuffer) {
+        let framebuffer_size = framebuffer.size().map(|x| x as f32);
+        for (name, y) in &self.falling {
+            self.geng.default_font().draw_aligned(
+                framebuffer,
+                name,
+                vec2(
+                    framebuffer_size.x / 2.0,
+                    framebuffer_size.y * (0.5 + y / 2.0),
+                ),
+                0.5,
+                64.0,
+                Color::BLACK,
+            );
+        }
         self.princess.draw(&self.drawer, framebuffer, &self.camera);
     }
     fn update(&mut self, delta_time: f64) {
         let delta_time = delta_time as f32;
+        for (_, y) in &mut self.falling {
+            *y -= delta_time;
+        }
+        self.falling.retain(|&(_, y)| y > 0.0);
         self.princess.update(delta_time);
     }
 }
