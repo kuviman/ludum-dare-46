@@ -21,6 +21,7 @@ pub struct Assets {
 }
 
 pub struct State {
+    feed_timer: f64,
     geng: Rc<Geng>,
     theme: Rc<geng::ui::Theme>,
     connection: geng::net::client::Connection<ServerMessage, ClientMessage>,
@@ -59,6 +60,7 @@ impl State {
             drawer: Drawer::new(geng),
             camera: Camera::new(),
             falling: Vec::new(),
+            feed_timer: 0.0,
         }
     }
     fn handle_messages(&mut self) {
@@ -93,20 +95,27 @@ impl State {
         use geng::ui::*;
         if self.princess_alive {
             let connection = &mut self.connection;
+            let feed_timer = &mut self.feed_timer;
             let result = if self.princess_alive {
-                Box::new(geng::ui::column![
-                    geng::ui::text(
-                        format!("Princess life: {}", self.princess_life),
-                        &self.theme.font,
-                        64.0,
-                        self.theme.color,
-                    )
-                    .align(vec2(1.0, 0.5))
-                    .uniform_padding(16.0),
-                    self.button
-                        .ui(Box::new(move || { connection.send(ClientMessage::Feed) }))
-                        .align(vec2(1.0, 0.5)),
-                ]) as Box<dyn geng::ui::Widget + 'a>
+                let mut column = geng::ui::column![geng::ui::text(
+                    format!("Princess life: {}", self.princess_life),
+                    &self.theme.font,
+                    64.0,
+                    self.theme.color,
+                )
+                .align(vec2(1.0, 0.5))
+                .uniform_padding(16.0)];
+                if *feed_timer <= 0.0 {
+                    column.push(Box::new(
+                        self.button
+                            .ui(Box::new(move || {
+                                *feed_timer = 1.0;
+                                connection.send(ClientMessage::Feed)
+                            }))
+                            .align(vec2(1.0, 0.5)),
+                    ));
+                }
+                Box::new(column) as Box<dyn geng::ui::Widget + 'a>
             } else {
                 Box::new(
                     geng::ui::text(
@@ -182,6 +191,7 @@ impl State {
         }
     }
     fn update(&mut self, delta_time: f64) {
+        self.feed_timer -= delta_time;
         let delta_time = delta_time as f32;
         for (_, y) in &mut self.falling {
             *y -= delta_time;
@@ -270,7 +280,10 @@ impl geng::State for ClientApp {
                 key: geng::Key::Space,
                 ..
             } => {
-                self.state.connection.send(ClientMessage::Feed);
+                if self.state.feed_timer <= 0.0 {
+                    self.state.feed_timer = 1.0;
+                    self.state.connection.send(ClientMessage::Feed);
+                }
             }
             _ => {}
         }
